@@ -1,5 +1,5 @@
-import type { Frame, Caption, CropConfig } from '@/types';
-import { cloneImageData, cropImageData, resizeImageData } from './imageUtils';
+import type { Frame, Caption, CropConfig, FitMode } from '@/types';
+import { cloneImageData, cropImageData, resizeImageData, adaptImageData } from './imageUtils';
 
 export function renderCaptionOnImageData(
   imageData: ImageData,
@@ -38,24 +38,41 @@ export function renderCaptionOnImageData(
   return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
+export interface ProcessOptions {
+  crop?: CropConfig;
+  exportWidth?: number;
+  exportHeight?: number;
+  fitMode?: FitMode;
+  backgroundColor?: string;
+}
+
 export function processFrame(
   frame: Frame,
   captions: Caption[],
   frameIndex: number,
-  crop: CropConfig,
-  exportWidth?: number,
-  exportHeight?: number
+  options: ProcessOptions = {}
 ): ImageData {
+  const { crop, exportWidth, exportHeight, fitMode, backgroundColor } = options;
+
   let result = cloneImageData(frame.imageData);
 
   result = renderCaptionOnImageData(result, captions, frameIndex);
 
-  if (crop.enabled && crop.width > 0 && crop.height > 0) {
+  if (crop?.enabled && crop.width > 0 && crop.height > 0) {
     result = cropImageData(result, crop.x, crop.y, crop.width, crop.height);
   }
 
   if (exportWidth && exportHeight && (result.width !== exportWidth || result.height !== exportHeight)) {
-    result = resizeImageData(result, exportWidth, exportHeight);
+    if (fitMode && fitMode !== 'fill') {
+      result = adaptImageData(result, {
+        targetWidth: exportWidth,
+        targetHeight: exportHeight,
+        fitMode,
+        backgroundColor,
+      });
+    } else {
+      result = resizeImageData(result, exportWidth, exportHeight);
+    }
   }
 
   return result;
@@ -64,12 +81,10 @@ export function processFrame(
 export function processAllFrames(
   frames: Frame[],
   captions: Caption[],
-  crop: CropConfig,
-  exportWidth?: number,
-  exportHeight?: number
+  options: ProcessOptions = {}
 ): { imageData: ImageData; delay: number }[] {
   return frames.map((frame, index) => ({
-    imageData: processFrame(frame, captions, index, crop, exportWidth, exportHeight),
+    imageData: processFrame(frame, captions, index, options),
     delay: frame.delay,
   }));
 }

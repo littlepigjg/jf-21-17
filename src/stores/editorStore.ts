@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { Frame, Caption, CropConfig, ExportConfig } from '@/types';
+import type { Frame, Caption, CropConfig, ExportConfig, CanvasAdapterConfig, FitMode, PresetTemplate } from '@/types';
 import { generateId, cloneImageData, createBlankImageData } from '@/utils/imageUtils';
+import { getPresetById, suggestPreset } from '@/utils/canvasAdapter';
 
 interface EditorStore {
   frames: Frame[];
@@ -13,6 +14,7 @@ interface EditorStore {
   currentFrameIndex: number;
   canvasWidth: number;
   canvasHeight: number;
+  canvasAdapter: CanvasAdapterConfig;
   showImportDialog: boolean;
   showExportDialog: boolean;
 
@@ -38,6 +40,13 @@ interface EditorStore {
   setCrop: (crop: Partial<CropConfig>) => void;
   setExportConfig: (config: Partial<ExportConfig>) => void;
 
+  setCanvasSize: (width: number, height: number) => void;
+  setCanvasAdapter: (config: Partial<CanvasAdapterConfig>) => void;
+  setFitMode: (mode: FitMode) => void;
+  applyPreset: (presetId: string) => void;
+  applyPresetTemplate: (template: PresetTemplate) => void;
+  autoSuggestPreset: () => void;
+
   clearAll: () => void;
 }
 
@@ -59,6 +68,13 @@ const defaultExportConfig: ExportConfig = {
   height: 0,
 };
 
+const defaultCanvasAdapter: CanvasAdapterConfig = {
+  fitMode: 'contain',
+  backgroundColor: '#000000',
+  showSafeArea: false,
+  currentPresetId: null,
+};
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   frames: [],
   selectedFrameIndex: -1,
@@ -70,6 +86,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   currentFrameIndex: 0,
   canvasWidth: 640,
   canvasHeight: 480,
+  canvasAdapter: defaultCanvasAdapter,
   showImportDialog: false,
   showExportDialog: false,
 
@@ -77,6 +94,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (frames.length > 0) {
       const firstFrame = frames[0];
       const exportCfg = get().exportConfig;
+      const suggestedPreset = suggestPreset(firstFrame.width, firstFrame.height);
       set({
         frames,
         selectedFrameIndex: 0,
@@ -92,6 +110,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
           ...exportCfg,
           width: exportCfg.width || firstFrame.width,
           height: exportCfg.height || firstFrame.height,
+        },
+        canvasAdapter: {
+          ...get().canvasAdapter,
+          currentPresetId: suggestedPreset.id,
         },
       });
     } else {
@@ -219,6 +241,90 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setCrop: (crop) => set({ crop: { ...get().crop, ...crop } }),
   setExportConfig: (config) => set({ exportConfig: { ...get().exportConfig, ...config } }),
 
+  setCanvasSize: (width, height) => {
+    set({
+      canvasWidth: width,
+      canvasHeight: height,
+      crop: {
+        ...get().crop,
+        x: 0,
+        y: 0,
+        width,
+        height,
+      },
+      canvasAdapter: {
+        ...get().canvasAdapter,
+        currentPresetId: 'custom',
+      },
+    });
+  },
+
+  setCanvasAdapter: (config) =>
+    set({ canvasAdapter: { ...get().canvasAdapter, ...config } }),
+
+  setFitMode: (mode) =>
+    set({ canvasAdapter: { ...get().canvasAdapter, fitMode: mode } }),
+
+  applyPreset: (presetId) => {
+    const preset = getPresetById(presetId);
+    if (!preset) return;
+    const state = get();
+    set({
+      canvasWidth: preset.width,
+      canvasHeight: preset.height,
+      crop: {
+        ...state.crop,
+        x: 0,
+        y: 0,
+        width: preset.width,
+        height: preset.height,
+      },
+      exportConfig: {
+        ...state.exportConfig,
+        width: preset.width,
+        height: preset.height,
+      },
+      canvasAdapter: {
+        ...state.canvasAdapter,
+        currentPresetId: presetId,
+        showSafeArea: !!preset.safeArea,
+      },
+    });
+  },
+
+  applyPresetTemplate: (template) => {
+    const state = get();
+    set({
+      canvasWidth: template.width,
+      canvasHeight: template.height,
+      crop: {
+        ...state.crop,
+        x: 0,
+        y: 0,
+        width: template.width,
+        height: template.height,
+      },
+      exportConfig: {
+        ...state.exportConfig,
+        width: template.width,
+        height: template.height,
+      },
+      canvasAdapter: {
+        ...state.canvasAdapter,
+        currentPresetId: template.id,
+        showSafeArea: !!template.safeArea,
+      },
+    });
+  },
+
+  autoSuggestPreset: () => {
+    const state = get();
+    if (state.frames.length === 0) return;
+    const firstFrame = state.frames[0];
+    const suggestedPreset = suggestPreset(firstFrame.width, firstFrame.height);
+    get().applyPreset(suggestedPreset.id);
+  },
+
   clearAll: () =>
     set({
       frames: [],
@@ -227,6 +333,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       crop: defaultCrop,
       isPlaying: false,
       currentFrameIndex: 0,
+      canvasWidth: 640,
+      canvasHeight: 480,
+      canvasAdapter: defaultCanvasAdapter,
+      exportConfig: defaultExportConfig,
       showImportDialog: false,
       showExportDialog: false,
     }),

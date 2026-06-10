@@ -1,5 +1,5 @@
 import GIF from 'gif.js';
-import type { Frame, Caption, CropConfig, ExportConfig } from '@/types';
+import type { Frame, Caption, CropConfig, ExportConfig, FitMode } from '@/types';
 import { processAllFrames } from './frameProcessor';
 import { sampleProcessedFrames } from './frameSampler';
 import { quantizePalette, applyDithering, findClosestColor } from './colorQuantizer';
@@ -230,14 +230,20 @@ export async function exportGif(
   captions: Caption[],
   crop: CropConfig,
   exportConfig: ExportConfig,
-  onProgress?: (progress: ExportProgress) => void
+  onProgress?: (progress: ExportProgress) => void,
+  fitMode?: FitMode,
+  backgroundColor?: string
 ): Promise<Blob> {
   const processedFrames = processAllFrames(
     frames,
     captions,
-    crop,
-    exportConfig.width,
-    exportConfig.height
+    {
+      crop,
+      exportWidth: exportConfig.width,
+      exportHeight: exportConfig.height,
+      fitMode,
+      backgroundColor,
+    }
   );
 
   if (processedFrames.length === 0) {

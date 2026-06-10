@@ -8,10 +8,24 @@ import {
   Plus,
   Trash2,
   Clock,
+  Layout,
+  Target,
+  Maximize2,
+  Sparkles,
+  ShieldAlert,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
-import type { Caption } from '@/types';
+import type { Caption, FitMode, PlatformCategory } from '@/types';
 import { cn } from '@/lib/utils';
+import {
+  PRESET_TEMPLATES,
+  getPresetsByCategory,
+  getPlatformCategoryLabel,
+  getFitModeLabel,
+  getFitModeDescription,
+  formatAspectRatio,
+} from '@/utils/canvasAdapter';
 
 interface PanelSectionProps {
   title: string;
@@ -189,6 +203,14 @@ function CaptionEditor({ caption }: { caption: Caption }) {
   );
 }
 
+const FIT_MODES: { value: FitMode; label: string; icon: React.ReactNode }[] = [
+  { value: 'cover', label: '智能裁剪', icon: <Crop className="w-4 h-4" /> },
+  { value: 'contain', label: '完整填充', icon: <Maximize2 className="w-4 h-4" /> },
+  { value: 'fill', label: '拉伸适应', icon: <Layout className="w-4 h-4" /> },
+];
+
+const CATEGORIES: PlatformCategory[] = ['social', 'messaging', 'video'];
+
 export default function PropertyPanel() {
   const {
     captions,
@@ -200,10 +222,17 @@ export default function PropertyPanel() {
     frames,
     canvasWidth,
     canvasHeight,
+    setCanvasSize,
+    canvasAdapter,
+    setCanvasAdapter,
+    setFitMode,
+    applyPreset,
+    autoSuggestPreset,
     setAllFrameDelays,
   } = useEditorStore();
 
   const [globalDelay, setGlobalDelay] = useState(100);
+  const [selectedCategory, setSelectedCategory] = useState<PlatformCategory>('social');
 
   return (
     <div className="w-80 bg-slate-900/50 border-l border-slate-700 flex flex-col flex-shrink-0 overflow-y-auto">
@@ -212,9 +241,174 @@ export default function PropertyPanel() {
       </div>
 
       <PanelSection
+        title="画布尺寸"
+        icon={<Layout className="w-4 h-4 text-cyan-400" />}
+        defaultOpen={true}
+      >
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">宽度</label>
+            <input
+              type="number"
+              value={canvasWidth}
+              onChange={(e) => {
+                const w = Number(e.target.value);
+                if (w > 0) setCanvasSize(w, canvasHeight);
+              }}
+              className="w-full px-2 py-1 bg-slate-900 border border-slate-600 rounded text-sm text-white focus:outline-none focus:border-cyan-500"
+              min={1}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">高度</label>
+            <input
+              type="number"
+              value={canvasHeight}
+              onChange={(e) => {
+                const h = Number(e.target.value);
+                if (h > 0) setCanvasSize(canvasWidth, h);
+              }}
+              className="w-full px-2 py-1 bg-slate-900 border border-slate-600 rounded text-sm text-white focus:outline-none focus:border-cyan-500"
+              min={1}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-400">宽高比</span>
+          <span className="text-xs text-slate-300 font-mono">
+            {formatAspectRatio(canvasWidth, canvasHeight)}
+          </span>
+        </div>
+        <button
+          onClick={autoSuggestPreset}
+          disabled={frames.length === 0}
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 disabled:opacity-50 disabled:cursor-not-allowed text-cyan-300 text-xs rounded-lg transition-colors border border-cyan-500/30"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          智能推荐预设
+        </button>
+      </PanelSection>
+
+      <PanelSection
+        title="平台预设"
+        icon={<Target className="w-4 h-4 text-violet-400" />}
+        defaultOpen={true}
+      >
+        <div className="flex flex-wrap gap-1 mb-2">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={cn(
+                'px-2 py-1 rounded text-xs transition-colors',
+                selectedCategory === cat
+                  ? 'bg-violet-600 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+              )}
+            >
+              {getPlatformCategoryLabel(cat)}
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+          {getPresetsByCategory(selectedCategory).map((preset) => (
+            <button
+              key={preset.id}
+              onClick={() => applyPreset(preset.id)}
+              className={cn(
+                'w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-all',
+                canvasAdapter.currentPresetId === preset.id
+                  ? 'bg-violet-600/20 border border-violet-500/50'
+                  : 'bg-slate-800/50 border border-slate-700 hover:border-violet-500/30 hover:bg-slate-800'
+              )}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <ImageIcon className={cn(
+                  'w-4 h-4 flex-shrink-0',
+                  canvasAdapter.currentPresetId === preset.id ? 'text-violet-400' : 'text-slate-500'
+                )} />
+                <div className="min-w-0">
+                  <div className={cn(
+                    'text-xs font-medium truncate',
+                    canvasAdapter.currentPresetId === preset.id ? 'text-violet-200' : 'text-slate-200'
+                  )}>
+                    {preset.platform} · {preset.name}
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    {preset.width} × {preset.height} ({preset.aspectRatio})
+                  </div>
+                </div>
+              </div>
+              {preset.safeArea && (
+                <ShieldAlert className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+              )}
+            </button>
+          ))}
+        </div>
+      </PanelSection>
+
+      <PanelSection
+        title="适配模式"
+        icon={<Layout className="w-4 h-4 text-orange-400" />}
+        defaultOpen={true}
+      >
+        <div className="grid grid-cols-3 gap-1.5">
+          {FIT_MODES.map((mode) => (
+            <button
+              key={mode.value}
+              onClick={() => setFitMode(mode.value)}
+              className={cn(
+                'flex flex-col items-center gap-1 py-2 px-1 rounded-lg transition-all text-center',
+                canvasAdapter.fitMode === mode.value
+                  ? 'bg-orange-600/20 border border-orange-500/50 text-orange-300'
+                  : 'bg-slate-800/50 border border-slate-700 hover:border-orange-500/30 text-slate-400 hover:text-slate-200'
+              )}
+            >
+              {mode.icon}
+              <span className="text-[10px] font-medium">{mode.label}</span>
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-slate-500 text-center">
+          {getFitModeDescription(canvasAdapter.fitMode)}
+        </p>
+
+        {canvasAdapter.fitMode === 'contain' && (
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">填充背景色</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={canvasAdapter.backgroundColor}
+                onChange={(e) => setCanvasAdapter({ backgroundColor: e.target.value })}
+                className="w-8 h-8 rounded border border-slate-600 cursor-pointer bg-transparent"
+              />
+              <input
+                type="text"
+                value={canvasAdapter.backgroundColor}
+                onChange={(e) => setCanvasAdapter({ backgroundColor: e.target.value })}
+                className="flex-1 px-2 py-1 bg-slate-900 border border-slate-600 rounded text-xs text-white focus:outline-none focus:border-orange-500 font-mono"
+              />
+            </div>
+          </div>
+        )}
+
+        <label className="flex items-center gap-2 cursor-pointer pt-1">
+          <input
+            type="checkbox"
+            checked={canvasAdapter.showSafeArea}
+            onChange={(e) => setCanvasAdapter({ showSafeArea: e.target.checked })}
+            className="w-4 h-4 rounded border-slate-600 text-emerald-600 focus:ring-emerald-500 bg-slate-900"
+          />
+          <span className="text-xs text-slate-300">显示安全区域指示</span>
+        </label>
+      </PanelSection>
+
+      <PanelSection
         title="全局帧时长"
         icon={<Clock className="w-4 h-4 text-cyan-400" />}
-        defaultOpen={true}
+        defaultOpen={false}
       >
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -243,7 +437,7 @@ export default function PropertyPanel() {
       <PanelSection
         title="字幕"
         icon={<Type className="w-4 h-4 text-violet-400" />}
-        defaultOpen={true}
+        defaultOpen={false}
       >
         <button
           onClick={() => addCaption()}
@@ -349,7 +543,7 @@ export default function PropertyPanel() {
       <PanelSection
         title="调色板优化"
         icon={<Palette className="w-4 h-4 text-emerald-400" />}
-        defaultOpen={true}
+        defaultOpen={false}
       >
         <div className="space-y-3">
           <div>

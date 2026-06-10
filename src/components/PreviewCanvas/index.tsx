@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, ShieldAlert } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { processFrame } from '@/utils/frameProcessor';
+import { getPresetById } from '@/utils/canvasAdapter';
 
 export default function PreviewCanvas() {
   const {
@@ -17,6 +18,7 @@ export default function PreviewCanvas() {
     canvasHeight,
     selectedFrameIndex,
     setSelectedFrameIndex,
+    canvasAdapter,
   } = useEditorStore();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -79,7 +81,9 @@ export default function PreviewCanvas() {
     const frame = frames[currentFrameIndex];
     if (!frame) return;
 
-    const processedData = processFrame(frame, captions, currentFrameIndex, crop);
+    const processedData = processFrame(frame, captions, currentFrameIndex, {
+      crop,
+    });
     canvas.width = processedData.width;
     canvas.height = processedData.height;
     ctx.putImageData(processedData, 0, 0);
@@ -108,11 +112,29 @@ export default function PreviewCanvas() {
     setZoom(Math.min(zoomX, zoomY, 2));
   };
 
+  const currentPreset = canvasAdapter.currentPresetId ? getPresetById(canvasAdapter.currentPresetId) : null;
+  const showSafeArea = canvasAdapter.showSafeArea && currentPreset?.safeArea;
+
   return (
     <div className="flex-1 flex flex-col bg-slate-950 min-w-0">
       <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800">
-        <div className="text-sm text-slate-400 font-mono">
-          {canvasWidth} × {canvasHeight} px
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-slate-400 font-mono">
+            {canvasWidth} × {canvasHeight} px
+          </div>
+          {currentPreset && currentPreset.id !== 'custom' && (
+            <div className="flex items-center gap-1 px-2 py-0.5 bg-violet-500/20 rounded text-xs text-violet-300">
+              <span>{currentPreset.platform}</span>
+              <span className="text-violet-400">·</span>
+              <span>{currentPreset.name}</span>
+            </div>
+          )}
+          {showSafeArea && (
+            <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/20 rounded text-xs text-emerald-300">
+              <ShieldAlert className="w-3 h-3" />
+              <span>安全区域已显示</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -163,6 +185,21 @@ export default function PreviewCanvas() {
               imageRendering: zoom >= 2 ? 'pixelated' : 'auto',
             }}
           />
+          {showSafeArea && currentPreset?.safeArea && (
+            <div
+              className="absolute z-20 pointer-events-none border-2 border-emerald-400/60 border-dashed"
+              style={{
+                left: (currentPreset.safeArea.left || 0) * zoom,
+                top: (currentPreset.safeArea.top || 0) * zoom,
+                right: (currentPreset.safeArea.right || 0) * zoom,
+                bottom: (currentPreset.safeArea.bottom || 0) * zoom,
+              }}
+            >
+              <div className="absolute -top-5 left-0 text-[10px] text-emerald-400 font-mono bg-emerald-500/20 px-1.5 py-0.5 rounded">
+                安全区域
+              </div>
+            </div>
+          )}
           {frames.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-slate-900/80 rounded">
               <div className="text-6xl mb-4">🎬</div>

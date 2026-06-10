@@ -1,20 +1,62 @@
 import { useState, useEffect } from 'react';
-import { X, Download, Loader2, FileImage, Gauge, Palette, Sparkles } from 'lucide-react';
+import {
+  X,
+  Download,
+  Loader2,
+  FileImage,
+  Gauge,
+  Palette,
+  Sparkles,
+  Layout,
+  Target,
+  Crop,
+  Maximize2,
+  ChevronDown,
+} from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { exportGif, downloadBlob, type ExportProgress } from '@/utils/gifEncoder';
 import { formatFileSize } from '@/utils/imageUtils';
+import {
+  PRESET_TEMPLATES,
+  getPresetsByCategory,
+  getPlatformCategoryLabel,
+  getFitModeLabel,
+  getFitModeDescription,
+} from '@/utils/canvasAdapter';
+import type { FitMode, PlatformCategory } from '@/types';
+import { cn } from '@/lib/utils';
 
 interface ExportDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
+const FIT_MODES: { value: FitMode; label: string; icon: React.ReactNode }[] = [
+  { value: 'cover', label: '智能裁剪', icon: <Crop className="w-4 h-4" /> },
+  { value: 'contain', label: '完整填充', icon: <Maximize2 className="w-4 h-4" /> },
+  { value: 'fill', label: '拉伸适应', icon: <Layout className="w-4 h-4" /> },
+];
+
+const CATEGORIES: PlatformCategory[] = ['social', 'messaging', 'video'];
+
 export default function ExportDialog({ open, onClose }: ExportDialogProps) {
-  const { frames, captions, crop, exportConfig, setExportConfig } = useEditorStore();
+  const {
+    frames,
+    captions,
+    crop,
+    exportConfig,
+    setExportConfig,
+    canvasAdapter,
+    applyPreset,
+  } = useEditorStore();
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState<ExportProgress>({ current: 0, total: 0, percent: 0 });
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [error, setError] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<PlatformCategory>('social');
+  const [showPresetList, setShowPresetList] = useState(false);
+  const [localFitMode, setLocalFitMode] = useState<FitMode>(canvasAdapter.fitMode);
+  const [localBgColor, setLocalBgColor] = useState(canvasAdapter.backgroundColor);
 
   useEffect(() => {
     if (!open) {
@@ -22,8 +64,11 @@ export default function ExportDialog({ open, onClose }: ExportDialogProps) {
       setProgress({ current: 0, total: 0, percent: 0 });
       setResultBlob(null);
       setError('');
+    } else {
+      setLocalFitMode(canvasAdapter.fitMode);
+      setLocalBgColor(canvasAdapter.backgroundColor);
     }
-  }, [open]);
+  }, [open, canvasAdapter.fitMode, canvasAdapter.backgroundColor]);
 
   if (!open) return null;
 
@@ -32,7 +77,15 @@ export default function ExportDialog({ open, onClose }: ExportDialogProps) {
     setError('');
     setResultBlob(null);
     try {
-      const blob = await exportGif(frames, captions, crop, exportConfig, setProgress);
+      const blob = await exportGif(
+        frames,
+        captions,
+        crop,
+        exportConfig,
+        setProgress,
+        localFitMode,
+        localBgColor
+      );
       setResultBlob(blob);
     } catch (err) {
       setError('导出失败，请重试');
@@ -59,6 +112,8 @@ export default function ExportDialog({ open, onClose }: ExportDialogProps) {
     const compressionRatio = 1 / (exportConfig.quality / 50 + 0.5);
     return Math.round(rawBytes * compressionRatio * 0.3);
   })();
+
+  const currentPreset = PRESET_TEMPLATES.find((t) => t.id === canvasAdapter.currentPresetId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -94,6 +149,158 @@ export default function ExportDialog({ open, onClose }: ExportDialogProps) {
                 {formatFileSize(estimatedSize)}
               </div>
             </div>
+          </div>
+
+          <div className="space-y-4 bg-slate-800/30 rounded-xl p-4">
+            <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
+              <Target className="w-4 h-4 text-violet-400" />
+              输出尺寸
+            </h3>
+
+            <div className="relative">
+              <button
+                onClick={() => setShowPresetList(!showPresetList)}
+                disabled={exporting}
+                className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-900 border border-slate-600 rounded-lg text-sm text-white hover:border-violet-500 transition-colors disabled:opacity-50"
+              >
+                <div className="flex items-center gap-2">
+                  <Layout className="w-4 h-4 text-slate-400" />
+                  {currentPreset ? (
+                    <span>
+                      {currentPreset.platform} · {currentPreset.name} ({currentPreset.aspectRatio})
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">选择平台预设...</span>
+                  )}
+                </div>
+                <ChevronDown className={cn(
+                  'w-4 h-4 text-slate-400 transition-transform',
+                  showPresetList && 'rotate-180'
+                )} />
+              </button>
+
+              {showPresetList && (
+                <div className="absolute z-10 mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden">
+                  <div className="flex flex-wrap gap-1 p-2 border-b border-slate-700">
+                    {CATEGORIES.map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => setSelectedCategory(cat)}
+                        className={cn(
+                          'px-2 py-1 rounded text-xs transition-colors',
+                          selectedCategory === cat
+                            ? 'bg-violet-600 text-white'
+                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                        )}
+                      >
+                        {getPlatformCategoryLabel(cat)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="max-h-48 overflow-y-auto">
+                    {getPresetsByCategory(selectedCategory).map((preset) => (
+                      <button
+                        key={preset.id}
+                        onClick={() => {
+                          applyPreset(preset.id);
+                          setShowPresetList(false);
+                        }}
+                        className={cn(
+                          'w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-800 transition-colors',
+                          canvasAdapter.currentPresetId === preset.id && 'bg-violet-600/10'
+                        )}
+                      >
+                        <div>
+                          <div className="text-sm text-slate-200">
+                            {preset.platform} · {preset.name}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {preset.width} × {preset.height}
+                          </div>
+                        </div>
+                        <span className="text-xs text-slate-400 font-mono">{preset.aspectRatio}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">输出宽度</label>
+                <input
+                  type="number"
+                  value={exportConfig.width || frames[0]?.width || 0}
+                  onChange={(e) => setExportConfig({ width: Number(e.target.value) })}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+                  min={1}
+                  disabled={exporting}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">输出高度</label>
+                <input
+                  type="number"
+                  value={exportConfig.height || frames[0]?.height || 0}
+                  onChange={(e) => setExportConfig({ height: Number(e.target.value) })}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
+                  min={1}
+                  disabled={exporting}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4 bg-slate-800/30 rounded-xl p-4">
+            <h3 className="text-sm font-medium text-slate-200 flex items-center gap-2">
+              <Layout className="w-4 h-4 text-orange-400" />
+              适配方式
+            </h3>
+
+            <div className="grid grid-cols-3 gap-2">
+              {FIT_MODES.map((mode) => (
+                <button
+                  key={mode.value}
+                  onClick={() => setLocalFitMode(mode.value)}
+                  disabled={exporting}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 py-3 px-2 rounded-lg transition-all text-center disabled:opacity-50',
+                    localFitMode === mode.value
+                      ? 'bg-orange-600/20 border border-orange-500/50 text-orange-300'
+                      : 'bg-slate-800/50 border border-slate-700 hover:border-orange-500/30 text-slate-400 hover:text-slate-200'
+                  )}
+                >
+                  {mode.icon}
+                  <span className="text-xs font-medium">{mode.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500 text-center">
+              {getFitModeDescription(localFitMode)}
+            </p>
+
+            {localFitMode === 'contain' && (
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">填充背景色</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={localBgColor}
+                    onChange={(e) => setLocalBgColor(e.target.value)}
+                    className="w-10 h-10 rounded-lg border border-slate-600 cursor-pointer bg-transparent"
+                    disabled={exporting}
+                  />
+                  <input
+                    type="text"
+                    value={localBgColor}
+                    onChange={(e) => setLocalBgColor(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm text-white focus:outline-none focus:border-orange-500 font-mono"
+                    disabled={exporting}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4 bg-slate-800/30 rounded-xl p-4">
@@ -152,31 +359,6 @@ export default function ExportDialog({ open, onClose }: ExportDialogProps) {
                 className="w-full h-1 bg-slate-700 rounded-full appearance-none cursor-pointer accent-emerald-500"
                 disabled={exporting}
               />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">输出宽度</label>
-                <input
-                  type="number"
-                  value={exportConfig.width || frames[0]?.width || 0}
-                  onChange={(e) => setExportConfig({ width: Number(e.target.value) })}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
-                  min={1}
-                  disabled={exporting}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">输出高度</label>
-                <input
-                  type="number"
-                  value={exportConfig.height || frames[0]?.height || 0}
-                  onChange={(e) => setExportConfig({ height: Number(e.target.value) })}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
-                  min={1}
-                  disabled={exporting}
-                />
-              </div>
             </div>
 
             <label className="flex items-center gap-2 cursor-pointer">

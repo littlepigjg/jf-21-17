@@ -29,6 +29,35 @@ export interface CropConfig {
   height: number;
 }
 
+export type FitMode = 'cover' | 'contain' | 'fill';
+
+export type PlatformCategory = 'social' | 'messaging' | 'video' | 'custom';
+
+export interface PresetTemplate {
+  id: string;
+  name: string;
+  platform: string;
+  category: PlatformCategory;
+  width: number;
+  height: number;
+  aspectRatio: string;
+  description?: string;
+  icon?: string;
+  safeArea?: {
+    top?: number;
+    bottom?: number;
+    left?: number;
+    right?: number;
+  };
+}
+
+export interface CanvasAdapterConfig {
+  fitMode: FitMode;
+  backgroundColor: string;
+  showSafeArea: boolean;
+  currentPresetId: string | null;
+}
+
 export interface ExportConfig {
   colors: number;
   quality: number;
@@ -50,4 +79,5 @@ export interface EditorState {
   currentFrameIndex: number;
   canvasWidth: number;
   canvasHeight: number;
+  canvasAdapter: CanvasAdapterConfig;
 }
